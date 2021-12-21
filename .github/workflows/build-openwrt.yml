@@ -20,10 +20,11 @@ on:
         default: 'false'
 
 env:
-  REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: master
+  REPO_URL: https://github.com/Mleaf/lede
+  REPO_BRANCH: mleaf
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: .config
+  CONFIG_FILE: diffconfig
+  MAKEFILE_TEMP_FILE: Makefile.temp 
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_BIN_DIR: true
@@ -35,7 +36,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-14.04
 
     steps:
     - name: Checkout
@@ -47,7 +48,7 @@ jobs:
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004)
+        sudo -E apt-get -qq install build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch unzip zlib1g-dev lib32gcc1 libc6-dev-i386 subversion flex uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils wget curl autoconf automake libtool autopoint
         sudo -E apt-get -qq install subversion
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
@@ -62,17 +63,13 @@ jobs:
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
         cd /workdir/openwrt
-        sed -i "/helloworld/d" "feeds.conf.default" && echo "src-git helloworld https://github.com/fw876/helloworld.git" >> "feeds.conf.default"
         mkdir -p package/helloworld
         for i in "dns2socks" "microsocks" "ipt2socks" "pdnsd-alt" "redsocks2"; do \
             svn checkout "https://github.com/immortalwrt/packages/trunk/net/$i" "package/helloworld/$i"; \
         done
         svn checkout https://github.com/coolsnowwolf/lede/trunk/tools/ucl tools/ucl && svn checkout https://github.com/coolsnowwolf/lede/trunk/tools/upx tools/upx
-        sed -i 'N;24a\tools-y += ucl upx' tools/Makefile && sed -i 'N;40a\$(curdir)/upx/compile := $(curdir)/ucl/compile' tools/Makefile
-        rm package/lean/r8152/patches/010-compat-skb_mark_not_on_list-was-backported-since-ker.patch
-        make distclean
-        rm -rf ./tmp
-        ./scripts/feeds clean
+        sed -i 'N;24a\tools-y += ucl upx' tools/Makefile && sed -i 'N;44a\$(curdir)/upx/compile := $(curdir)/ucl/compile' tools/Makefile
+        wget https://raw.githubusercontent.com/coolsnowwolf/lede/master/include/meson.mk -O include/meson.mk 
         cd /workdir
 
     - name: Load custom feeds
@@ -82,11 +79,30 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
+    - name: Clean
+      run: |
+        cd /workdir/openwrt
+        make distclean
+        rm -rf ./tmp
+        ./scripts/feeds clean
+        cd /workdir
+
     - name: Update feeds
-      run: cd openwrt && ./scripts/feeds update -a
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        echo "========== rm -rf wg-installer... =========="
+        rm -rf feeds/packages/net/wg-installer/
+        [ -e $MAKEFILE_TEMP_FILE ] && mv $MAKEFILE_TEMP_FILE feeds/packages/utils/attendedsysupgrade-common/Makefile
+        ./scripts/feeds update -a
+        cd /workdir
 
     - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
+      run: |
+        cd openwrt
+        ./scripts/feeds install -a
+        ./scripts/feeds update helloworld
+        ./scripts/feeds install -a -f -p helloworld
 
     - name: Load custom configuration
       run: |
